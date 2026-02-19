@@ -1,0 +1,212 @@
+name: 'core-api'
+services:
+  api-gateway:
+    image: kimhongdocker/core-api-api-gateway
+    container_name: api-gateway
+    labels:
+      logging: promtail
+      logging_job: api-gateway
+    environment:
+      - GATEWAY_SERVICE_PORT=${GATEWAY_SERVICE_PORT}
+      - SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED=${SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED}
+      - SPRING_CLOUD_CONSUL_CONFIG_ENABLED=${SPRING_CLOUD_CONSUL_CONFIG_ENABLED}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+      - KEYCLOAK_USER_NAME=${KEYCLOAK_USER_NAME}
+      - KEYCLOAK_PASSWORD=${KEYCLOAK_PASSWORD}
+      - KEYCLOAK_TOKEN_URI=${KEYCLOAK_TOKEN_URI}
+      - KEYCLOAK_ISSUER_URI=${KEYCLOAK_ISSUER_URI}
+      - KEYCLOAK_JWK_SET_URI=${KEYCLOAK_JWK_SET_URI}
+      - NOTIFICATION_SERVICE_PORT=${NOTIFICATION_SERVICE_PORT}
+      - ACCOUNT_SERVICE_PORT=${ACCOUNT_SERVICE_PORT}
+      - TRANSACTION_SERVICE_PORT=${TRANSACTION_SERVICE_PORT}
+      - MB_SERVICE_PORT=${MB_SERVICE_PORT}
+
+    ports:
+      - "${GATEWAY_SERVICE_PORT}:${GATEWAY_SERVICE_PORT}"
+    restart: unless-stopped
+    networks:
+      - core-api-net
+    deploy:
+      resources:
+        limits:
+          memory: 700m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  notification-service:
+    image: kimhongdocker/core-api-notification-service
+    container_name: notification-service
+    labels:
+      logging: promtail
+      logging_job: notification-service
+    environment:
+      - SANDBOX_BASE_URL=${SANDBOX_BASE_URL}
+      - SMS_USERNAME=${SMS_USERNAME}
+      - SMS_PASSWORD=${SMS_PASSWORD}
+      - SMS_SENDER=${SMS_SENDER}
+      - SMS_OTP_EXPIRE=${SMS_OTP_EXPIRE}
+      - SMS_RABBITMQ_HOST=${SMS_RABBITMQ_HOST}
+      - SMS_REDIS_HOST=${SMS_REDIS_HOST}
+      - SMS_SERVICE_PORT=${SMS_SERVICE_PORT}
+      - OTP_DATASOURCE_URL=${OTP_DATASOURCE_URL}
+      - OTP_DATABASE_USER=${OTP_DATABASE_USER}
+      - OTP_DATABASE_PASSWORD=${OTP_DATABASE_PASSWORD}
+      - KEYCLOAK_ISSUER_URI=${KEYCLOAK_ISSUER_URI}
+      - NOTIFICATION_SERVICE_PORT=${NOTIFICATION_SERVICE_PORT}
+      - ACCOUNT_SERVICE_URI=http://${ACCOUNT_SERVICE_NAME}:${ACCOUNT_SERVICE_PORT}
+#    ports:
+#      - "${SMS_SERVICE_PORT}:${SMS_SERVICE_PORT}"
+    restart: unless-stopped
+    networks:
+      - core-api-net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 700m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  account-service:
+    image: kimhongdocker/core-api-account-service
+    container_name: account-service
+    labels:
+      logging: promtail
+      logging_job: account-service
+    environment:
+      - ACCOUNT_SERVICE_PORT=${ACCOUNT_SERVICE_PORT}
+      - ACCOUNT_DATABASE_HOST=${ACCOUNT_DATABASE_HOST}
+      - ACCOUNT_DATABASE_PORT=${ACCOUNT_DATABASE_PORT}
+      - ACCOUNT_DATABASE_NAME=${ACCOUNT_DATABASE_NAME}
+      - ACCOUNT_DATABASE_USER=${ACCOUNT_DATABASE_USER}
+      - ACCOUNT_DATABASE_PASSWORD=${ACCOUNT_DATABASE_PASSWORD}
+      - KEYCLOAK_JWK_SET_URI=${KEYCLOAK_JWK_SET_URI}
+      - SPG_URL=${SPG_URL}
+      - SPG_PORT=${SPG_PORT}
+      - OB_ACCOUNT_INQUIRY_CLIENT_BASE_URL=${OB_ACCOUNT_INQUIRY_CLIENT_BASE_URL}
+#    ports:
+#      - "${ACCOUNT_SERVICE_PORT}:${ACCOUNT_SERVICE_PORT}"
+    restart: unless-stopped
+    networks:
+      - core-api-net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 700m
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8002/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  transaction-service:
+    image: kimhongdocker/core-api-transaction-service
+    container_name: transaction-service
+    labels:
+      logging: promtail
+      logging_job: transaction-service
+    environment:
+      - TRANSACTION_SERVICE_PORT=${TRANSACTION_SERVICE_PORT}
+      - TRANSACTION_DATABASE_HOST=${TRANSACTION_DATABASE_HOST}
+      - TRANSACTION_DATABASE_PORT=${TRANSACTION_DATABASE_PORT}
+      - TRANSACTION_DATABASE_NAME=${TRANSACTION_DATABASE_NAME}
+      - TRANSACTION_DATABASE_USER=${TRANSACTION_DATABASE_USER}
+      - TRANSACTION_DATABASE_PASSWORD=${TRANSACTION_DATABASE_PASSWORD}
+      - KEYCLOAK_JWK_SET_URI=${KEYCLOAK_JWK_SET_URI}
+      - ACCOUNT_SERVICE_URI=http://${ACCOUNT_SERVICE_NAME}:${ACCOUNT_SERVICE_PORT}
+      - TRANSACTION_SERVICE_STAFFID=${TRANSACTION_SERVICE_STAFFID}
+      - TRANSACTION_SERVICE_STAFFAUTHID=${TRANSACTION_SERVICE_STAFFAUTHID}
+      - SPG_URL=${SPG_URL}
+      - SPG_PORT=${SPG_PORT}
+      - GENERATE_QR_PERSONAL_URL=${GENERATE_QR_PERSONAL_URL}
+      - QR_LOGIN_URL=${QR_LOGIN_URL}
+      - QR_USERNAME=${QR_USERNAME}
+      - QR_PASSWORD=${QR_PASSWORD}
+      - BAKONG_API_URL=${BAKONG_API_URL}
+      - BAKONG_API_USERNAME=${BAKONG_API_USERNAME}
+      - BAKONG_API_PASSWORD=${BAKONG_API_PASSWORD}
+      - OPENBANKING_URL=${OPENBANKING_URL}
+      - OPENBANKING_USERNAME=${OPENBANKING_USERNAME}
+      - OPENBANKING_PASSWORD=${OPENBANKING_PASSWORD}
+      - CBS_URL=${CBS_URL}
+      - TPS_DB_HOST=${TPS_DB_HOST}
+      - TPS_DB_PORT=${TPS_DB_PORT}
+      - TPS_DB_NAME=${TPS_DB_NAME}
+      - TPS_DB_USERNAME=${TPS_DB_USERNAME}
+      - TPS_DB_PASSWORD=${TPS_DB_PASSWORD}
+      - TPS_SOAP_USER=${TPS_SOAP_USER}
+      - TPS_SOAP_PASSWORD=${TPS_SOAP_PASSWORD}
+      - TPS_PORT=${TPS_PORT}
+      - TPS_BANK_CODE=${TPS_BANK_CODE}
+      - TXN_DESC_OUT_QR_30=${TXN_DESC_OUT_QR_30}
+      - TXN_DESC_OUT_QR_29=${TXN_DESC_OUT_QR_29}
+      - TXN_DESC_IN_QR_30=${TXN_DESC_IN_QR_30}
+      - TXN_DESC_IN_QR_29=${TXN_DESC_IN_QR_29}
+      - TXN_DESC_OUT_IB=${TXN_DESC_OUT_IB}
+      - TXN_DESC_IN_IB=${TXN_DESC_IN_IB}
+    #    ports:
+    #      - "${ACCOUNT_SERVICE_PORT}:${ACCOUNT_SERVICE_PORT}"
+    restart: unless-stopped
+    networks:
+      - core-api-net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 700m
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8003/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  mb-utils:
+    image: kimhongdocker/core-api-mb-utils
+    container_name: mb-utils
+    environment:
+      - MB_DB_HOST=${MB_DB_HOST}
+      - MB_DB_PORT=${MB_DB_PORT}
+      - MB_DB_NAME=${MB_DB_NAME}
+      - MB_DB_USERNAME=${MB_DB_USERNAME}
+      - MB_DB_PASSWORD=${MB_DB_PASSWORD}
+      - TRANSACTION_SERVICE_NAME=${TRANSACTION_SERVICE_NAME}
+      - TRANSACTION_SERVICE_PORT=${TRANSACTION_SERVICE_PORT}
+      - KEYCLOAK_TOKEN_USER_NAME=${KEYCLOAK_TOKEN_USER_NAME}
+      - KEYCLOAK_TOKEN_PASSWORD=${KEYCLOAK_TOKEN_PASSWORD}
+      - GATEWAY_SERVICE_PORT=${GATEWAY_SERVICE_PORT}
+      - GATEWAY_SERVICE_HOST=${GATEWAY_SERVICE_HOST}
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,mappings
+    restart: unless-stopped
+    networks:
+      - core-api-net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 700m
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8004/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
