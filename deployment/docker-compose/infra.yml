@@ -123,6 +123,10 @@ services:
       - "16686:16686"
       - "14268:14268"
       - "4317:4317"
+    volumes:
+      - jaeger_data:/badger
+    networks:
+      - core-api-net
 
 
 networks:
@@ -136,3 +140,4 @@ volumes:
   postgres_data:
   grafana_data:
   loki_data:
+  jaeger_data:
