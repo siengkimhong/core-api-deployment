@@ -1,9 +1,6 @@
 version: '3'
 
 vars:
-  GOOS: "{{default OS .GOOS}}"
-  MVNW: '{{if eq .GOOS "windows"}}mvnw.cmd{{else}}./mvnw{{end}}'
-
   DC_DIR: "deployment/docker-compose"
   INFRA_DC_FILE: "{{.DC_DIR}}/infra.yml"
   APPS_DC_FILE: "{{.DC_DIR}}/apps.yml"
@@ -11,65 +8,24 @@ vars:
   ENV: '{{default "dev" .ENV}}'
   ENV_FILE: '{{printf "%s/.env.%s" .DC_DIR .ENV}}'
 
-  # Compose args
   DC_INFRA_ARGS: '--env-file {{.ENV_FILE}} -f {{.INFRA_DC_FILE}}'
-  DC_APPS_ARGS:  '--env-file {{.ENV_FILE}} -f {{.APPS_DC_FILE}}'
   DC_ALL_ARGS:   '--env-file {{.ENV_FILE}} -f {{.INFRA_DC_FILE}} -f {{.APPS_DC_FILE}}'
 
-  # DockerHub namespace (change if needed)
-  REGISTRY_NS: '{{default "kimhongdocker" .REGISTRY_NS}}'
-
-  # Default mode: dev builds locally, prod pulls
-  MODE: '{{default (ternary "pull" "build" (eq .ENV "prod")) .MODE}}'
-  # MODE values: build | pull
-
 tasks:
+
   default:
     cmds:
       - task: ps
 
   # -------------------------
-  # Quality / build
-  # -------------------------
-  format:
-    cmds:
-      - "{{.MVNW}} spotless:apply"
-
-  test:
-    deps: [format]
-    cmds:
-      - "{{.MVNW}} clean verify"
-
-  build_jars:
-    deps: [format]
-    cmds:
-      - "{{.MVNW}} -pl notification-service clean package -DskipTests -Dgit.commit.id.skip=true"
-      - "{{.MVNW}} -pl api-gateway clean package -DskipTests -Dgit.commit.id.skip=true"
-      - "{{.MVNW}} -pl account-service clean package -DskipTests -Dgit.commit.id.skip=true"
-      - "{{.MVNW}} -pl transaction-service clean package -DskipTests -Dgit.commit.id.skip=true"
-      - "{{.MVNW}} -pl mb-utils clean package -DskipTests -Dgit.commit.id.skip=true"
-
-  build_images:
-    deps: [build_jars]
-    cmds:
-      - docker build -t {{.REGISTRY_NS}}/core-api-notification-service ./notification-service
-      - docker build -t {{.REGISTRY_NS}}/core-api-api-gateway ./api-gateway
-      - docker build -t {{.REGISTRY_NS}}/core-api-account-service ./account-service
-      - docker build -t {{.REGISTRY_NS}}/core-api-transaction-service ./transaction-service
-      - docker build -t {{.REGISTRY_NS}}/core-api-mb-utils ./mb-utils
-
-  pull_images:
-    cmds:
-      - docker compose {{.DC_ALL_ARGS}} pull
-
-  # -------------------------
   # Infra
   # -------------------------
+
   setup_dirs:
     cmds:
       - mkdir -p deployment/docker-compose/loki
-      - chown -R 10001:10001 deployment/docker-compose/loki
-      - chmod -R u+rwX deployment/docker-compose/loki
+      - chown -R 10001:10001 deployment/docker-compose/loki || true
+      - chmod -R u+rwX deployment/docker-compose/loki || true
 
   start_infra:
     deps: [setup_dirs]
@@ -81,28 +37,22 @@ tasks:
       - docker compose {{.DC_INFRA_ARGS}} stop
       - docker compose {{.DC_INFRA_ARGS}} rm -f
 
-  restart_infra:
-    cmds:
-      - task: stop_infra
-      - task: sleep
-      - task: start_infra
+  # -------------------------
+  # Apps
+  # -------------------------
 
-  # -------------------------
-  # Apps (all services)
-  # -------------------------
+  pull:
+    desc: "Pull latest images"
+    cmds:
+      - docker compose {{.DC_ALL_ARGS}} pull
+
   start:
-    desc: "Start infra+apps. Default: dev=build, prod=pull. Override with MODE=build|pull"
+    desc: "Start all services"
     deps: [setup_dirs]
     cmds:
-      - |
-        echo "ENV={{.ENV}} MODE={{.MODE}} ENV_FILE={{.ENV_FILE}}"
-        if [ "{{.MODE}}" = "build" ]; then
-          task build_images
-        else
-          task pull_images
-        fi
-
-        docker compose {{.DC_ALL_ARGS}} up -d --force-recreate
+      - echo "ENV={{.ENV}}"
+      - docker compose {{.DC_ALL_ARGS}} pull
+      - docker compose {{.DC_ALL_ARGS}} up -d --force-recreate
 
   stop:
     cmds:
@@ -112,144 +62,40 @@ tasks:
   restart:
     cmds:
       - task: stop
-      - task: sleep
       - task: start
+
+  # -------------------------
+  # Service Controls
+  # -------------------------
+
+  restart_service:
+    desc: "Restart one service. SERVICE=name"
+    vars:
+      SERVICE: '{{.SERVICE}}'
+    cmds:
+      - |
+        [ -n "{{.SERVICE}}" ] || { echo "Provide SERVICE=name"; exit 1; }
+        docker compose {{.DC_ALL_ARGS}} pull {{.SERVICE}}
+        docker compose {{.DC_ALL_ARGS}} up -d --force-recreate {{.SERVICE}}
+
+  logs:
+    vars:
+      SERVICE: '{{.SERVICE}}'
+    cmds:
+      - |
+        [ -n "{{.SERVICE}}" ] || { echo "Provide SERVICE=name"; exit 1; }
+        docker compose {{.DC_ALL_ARGS}} logs -f {{.SERVICE}}
+
+  ps:
+    cmds:
+      - docker compose {{.DC_ALL_ARGS}} ps
 
   # -------------------------
   # Cleanup
   # -------------------------
+
   prune:
-    desc: "Clean dangling images + build cache (safe-ish). Run when disk is full."
     cmds:
       - docker image prune -f
       - docker builder prune -f
-
-  nuke_dangling:
-    desc: "Aggressive: remove ALL dangling images (none:none)."
-    cmds:
-      - |
-        ids=$(docker images -f "dangling=true" -q || true)
-        if [ -n "$ids" ]; then
-          docker rmi -f $ids || true
-        else
-          echo "No dangling images."
-        fi
-
-  # -------------------------
-  # Selective controls
-  # -------------------------
-  rebuild_service_image:
-    desc: "Build JAR + Docker image for one service. SERVICE=<name>"
-    vars:
-      SERVICE: '{{.SERVICE}}'
-      REGISTRY_NS: '{{.REGISTRY_NS}}'
-    cmds:
-      - |
-        [ -n "{{.SERVICE}}" ] || { echo "✖ Provide SERVICE=<name>"; exit 1; }
-        case "{{.SERVICE}}" in
-          notification-service)
-            MOD=notification-service; IMG={{.REGISTRY_NS}}/core-api-notification-service ;;
-          api-gateway)
-            MOD=api-gateway; IMG={{.REGISTRY_NS}}/core-api-api-gateway ;;
-          account-service)
-            MOD=account-service; IMG={{.REGISTRY_NS}}/core-api-account-service ;;
-          transaction-service)
-            MOD=transaction-service; IMG={{.REGISTRY_NS}}/core-api-transaction-service ;;
-          mb-utils)
-            MOD=mb-utils; IMG={{.REGISTRY_NS}}/core-api-mb-utils ;;
-          *)
-            echo "✖ Unknown service: {{.SERVICE}}"; exit 1 ;;
-        esac
-
-        echo "→ Rebuilding {{.SERVICE}} ($MOD -> $IMG)"
-        {{.MVNW}} -pl "$MOD" clean package -DskipTests -Dgit.commit.id.skip=true
-        docker build -t "$IMG" "./$MOD"
-
-  pull_service_image:
-    desc: "Pull one service image by service name (compose service name). SERVICE=<composeService>"
-    vars:
-      SERVICE: '{{.SERVICE}}'
-    cmds:
-      - |
-        [ -n "{{.SERVICE}}" ] || { echo "✖ Provide SERVICE=<composeService>"; exit 1; }
-        docker compose {{.DC_ALL_ARGS}} pull {{.SERVICE}}
-
-  start_service:
-    desc: "Start one or more services. SERVICES='a b' or SERVICE=x. MODE=build|pull (default inherits)"
-    vars:
-      SERVICES: '{{if .SERVICES}}{{.SERVICES}}{{else}}{{.SERVICE}}{{end}}'
-      MODE: '{{default (ternary "pull" "build" (eq .ENV "prod")) .MODE}}'
-    cmds:
-      - |
-        [ -n "{{.SERVICES}}" ] || { echo "✖ Provide SERVICE=... or SERVICES='... ...'"; exit 1; }
-        echo "ENV={{.ENV}} MODE={{.MODE}} SERVICES={{.SERVICES}}"
-
-        if [ "{{.MODE}}" = "build" ]; then
-          # build each service image (SERVICE names must match your module names here)
-          for SVC in {{.SERVICES}}; do
-            # map compose service -> module name
-            case "$SVC" in
-              notification-service|api-gateway|account-service|transaction-service|mb-utils)
-                task rebuild_service_image SERVICE="$SVC" ;;
-              *)
-                echo "✖ Unknown service for rebuild: $SVC"; exit 1 ;;
-            esac
-          done
-        else
-          docker compose {{.DC_ALL_ARGS}} pull {{.SERVICES}} || true
-        fi
-
-        docker compose {{.DC_ALL_ARGS}} up -d --force-recreate {{.SERVICES}}
-
-  stop_service:
-    desc: "Stop one or more services. SERVICES='a b' or SERVICE=x"
-    vars:
-      SERVICES: '{{if .SERVICES}}{{.SERVICES}}{{else}}{{.SERVICE}}{{end}}'
-    cmds:
-      - |
-        [ -n "{{.SERVICES}}" ] || { echo "✖ Provide SERVICE=... or SERVICES='... ...'"; exit 1; }
-        docker compose {{.DC_ALL_ARGS}} stop {{.SERVICES}}
-
-  rm_service:
-    desc: "Remove stopped containers for one or more services. SERVICES='a b' or SERVICE=x"
-    vars:
-      SERVICES: '{{if .SERVICES}}{{.SERVICES}}{{else}}{{.SERVICE}}{{end}}'
-    cmds:
-      - |
-        [ -n "{{.SERVICES}}" ] || { echo "✖ Provide SERVICE=... or SERVICES='... ...'"; exit 1; }
-        docker compose {{.DC_ALL_ARGS}} rm -f {{.SERVICES}}
-
-  restart_service:
-    desc: "Recreate one or more services. SERVICES='a b' or SERVICE=x. MODE=build|pull"
-    vars:
-      SERVICES: '{{if .SERVICES}}{{.SERVICES}}{{else}}{{.SERVICE}}{{end}}'
-      MODE: '{{default (ternary "pull" "build" (eq .ENV "prod")) .MODE}}'
-    cmds:
-      - task: stop_service
-        vars: { SERVICES: '{{.SERVICES}}' }
-      - task: rm_service
-        vars: { SERVICES: '{{.SERVICES}}' }
-      - task: start_service
-        vars:
-          SERVICES: '{{.SERVICES}}'
-          MODE: '{{.MODE}}'
-
-  logs:
-    desc: "Follow logs for service(s). Example: task logs SERVICE=api-gateway"
-    vars:
-      SERVICES: '{{if .SERVICES}}{{.SERVICES}}{{else}}{{.SERVICE}}{{end}}'
-    cmds:
-      - |
-        [ -n "{{.SERVICES}}" ] || { echo "✖ Provide SERVICE=... or SERVICES='... ...'"; exit 1; }
-        docker compose {{.DC_ALL_ARGS}} logs -f {{.SERVICES}}
-
-  ps:
-    desc: "Show compose status for infra+apps"
-    cmds:
-      - docker compose {{.DC_ALL_ARGS}} ps
-
-  sleep:
-    vars:
-      DURATION: '{{default 5 .DURATION}}'
-    cmds:
-      - sleep {{.DURATION}}
+      - docker volume prune -f
