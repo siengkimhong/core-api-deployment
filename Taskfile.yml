@@ -1,7 +1,6 @@
 version: '3'
 
 vars:
-  COMPOSE_PROJECT_NAME: '{{default "core-api" .COMPOSE_PROJECT_NAME}}'
   DC_DIR: "deployment/docker-compose"
   INFRA_DC_FILE: "{{.DC_DIR}}/infra.yml"
   APPS_DC_FILE: "{{.DC_DIR}}/apps.yml"
@@ -12,35 +11,29 @@ vars:
   DC_INFRA_ARGS: '--env-file {{.ENV_FILE}} -f {{.INFRA_DC_FILE}}'
   DC_ALL_ARGS:   '--env-file {{.ENV_FILE}} -f {{.INFRA_DC_FILE}} -f {{.APPS_DC_FILE}}'
 
-tasks:
+  # ✅ stable compose project name => stable volumes (core-api_loki_data, core-api_postgres_data, etc.)
+  COMPOSE_PROJECT_NAME: '{{default "core-api" .COMPOSE_PROJECT_NAME}}'
 
+tasks:
   default:
     cmds:
       - task: ps
-
-  # -------------------------
-  # Infra
-  # -------------------------
 
   setup_dirs:
     cmds:
       - |
         set -e
-
         echo "==> Setup Loki storage"
 
-        # If you are bind-mounting ./loki -> /loki (old method), keep folder ready
+        # (optional) keep folder for bind-mount scenarios
         sudo mkdir -p deployment/docker-compose/loki || true
         sudo chown -R 10001:10001 deployment/docker-compose/loki || true
         sudo chmod -R u+rwX deployment/docker-compose/loki || true
 
-        # ✅ If you are using named volume loki_data:/loki (current method), fix volume perms
-        # Compose will create it as <project>_loki_data. Default project name usually equals folder name.
-        # You can override with: COMPOSE_PROJECT_NAME=core-api
-        PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}"
-        LOKI_VOL="${PROJECT}_loki_data"
-
+        # ✅ fix named volume perms used by: loki_data:/loki
+        LOKI_VOL="{{.COMPOSE_PROJECT_NAME}}_loki_data"
         echo "==> Fix Loki named-volume permissions: $LOKI_VOL"
+
         docker volume inspect "$LOKI_VOL" >/dev/null 2>&1 || docker volume create "$LOKI_VOL" >/dev/null
 
         docker run --rm -u 0:0 -v "$LOKI_VOL":/loki alpine:3.19 sh -lc '
@@ -49,47 +42,38 @@ tasks:
           chmod -R u+rwX /loki
         '
 
-
   start_infra:
     deps: [setup_dirs]
     cmds:
-      - docker compose {{.DC_INFRA_ARGS}} up -d
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_INFRA_ARGS}} up -d
 
   stop_infra:
     cmds:
-      - docker compose {{.DC_INFRA_ARGS}} stop
-      - docker compose {{.DC_INFRA_ARGS}} rm -f
-
-  # -------------------------
-  # Apps
-  # -------------------------
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_INFRA_ARGS}} stop
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_INFRA_ARGS}} rm -f
 
   pull:
     desc: "Pull latest images"
     cmds:
-      - docker compose {{.DC_ALL_ARGS}} pull
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} pull
 
   start:
     desc: "Start all services"
     deps: [setup_dirs]
     cmds:
-      - echo "ENV={{.ENV}}"
-      - docker compose {{.DC_ALL_ARGS}} pull
-      - docker compose {{.DC_ALL_ARGS}} up -d --force-recreate
+      - echo "ENV={{.ENV}} COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}}"
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} pull
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} up -d --force-recreate
 
   stop:
     cmds:
-      - docker compose {{.DC_ALL_ARGS}} stop
-      - docker compose {{.DC_ALL_ARGS}} rm -f
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} stop
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} rm -f
 
   restart:
     cmds:
       - task: stop
       - task: start
-
-  # -------------------------
-  # Service Controls
-  # -------------------------
 
   restart_service:
     desc: "Restart one service. SERVICE=name"
@@ -98,8 +82,8 @@ tasks:
     cmds:
       - |
         [ -n "{{.SERVICE}}" ] || { echo "Provide SERVICE=name"; exit 1; }
-        docker compose {{.DC_ALL_ARGS}} pull {{.SERVICE}}
-        docker compose {{.DC_ALL_ARGS}} up -d --force-recreate {{.SERVICE}}
+        COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} pull {{.SERVICE}}
+        COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} up -d --force-recreate {{.SERVICE}}
 
   logs:
     vars:
@@ -107,15 +91,11 @@ tasks:
     cmds:
       - |
         [ -n "{{.SERVICE}}" ] || { echo "Provide SERVICE=name"; exit 1; }
-        docker compose {{.DC_ALL_ARGS}} logs -f {{.SERVICE}}
+        COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} logs -f {{.SERVICE}}
 
   ps:
     cmds:
-      - docker compose {{.DC_ALL_ARGS}} ps
-
-  # -------------------------
-  # Cleanup
-  # -------------------------
+      - COMPOSE_PROJECT_NAME={{.COMPOSE_PROJECT_NAME}} docker compose {{.DC_ALL_ARGS}} ps
 
   prune:
     cmds:
