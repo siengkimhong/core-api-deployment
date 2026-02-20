@@ -23,9 +23,9 @@ tasks:
 
   setup_dirs:
     cmds:
-      - mkdir -p deployment/docker-compose/loki
-      - chown -R 10001:10001 deployment/docker-compose/loki || true
-      - chmod -R u+rwX deployment/docker-compose/loki || true
+      - sudo mkdir -p deployment/docker-compose/loki
+      - sudo chown -R 10001:10001 deployment/docker-compose/loki || true
+      - sudo chmod -R u+rwX deployment/docker-compose/loki || true
 
   start_infra:
     deps: [setup_dirs]
