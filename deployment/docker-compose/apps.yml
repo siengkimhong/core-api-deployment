@@ -1,7 +1,7 @@
 name: 'core-api'
 services:
   api-gateway:
-    image: kimhongdocker/core-api-api-gateway
+    image: kimhongdocker/core-api-api-gateway:${VERSION_GATEWAY}
     container_name: api-gateway
     labels:
       logging: promtail
@@ -39,7 +39,7 @@ services:
       start_period: 30s
 
   notification-service:
-    image: kimhongdocker/core-api-notification-service
+    image: kimhongdocker/core-api-notification-service:${VERSION_NOTIFICATION_SERVICE}
     container_name: notification-service
     labels:
       logging: promtail
@@ -59,8 +59,8 @@ services:
       - KEYCLOAK_ISSUER_URI=${KEYCLOAK_ISSUER_URI}
       - NOTIFICATION_SERVICE_PORT=${NOTIFICATION_SERVICE_PORT}
       - ACCOUNT_SERVICE_URI=http://${ACCOUNT_SERVICE_NAME}:${ACCOUNT_SERVICE_PORT}
-#    ports:
-#      - "${SMS_SERVICE_PORT}:${SMS_SERVICE_PORT}"
+    #    ports:
+    #      - "${SMS_SERVICE_PORT}:${SMS_SERVICE_PORT}"
     restart: unless-stopped
     networks:
       - core-api-net
@@ -79,7 +79,7 @@ services:
       start_period: 30s
 
   account-service:
-    image: kimhongdocker/core-api-account-service
+    image: kimhongdocker/core-api-account-service:${VERSION_ACCOUNT_SERVICE}
     container_name: account-service
     labels:
       logging: promtail
@@ -95,8 +95,8 @@ services:
       - SPG_URL=${SPG_URL}
       - SPG_PORT=${SPG_PORT}
       - OB_ACCOUNT_INQUIRY_CLIENT_BASE_URL=${OB_ACCOUNT_INQUIRY_CLIENT_BASE_URL}
-#    ports:
-#      - "${ACCOUNT_SERVICE_PORT}:${ACCOUNT_SERVICE_PORT}"
+    #    ports:
+    #      - "${ACCOUNT_SERVICE_PORT}:${ACCOUNT_SERVICE_PORT}"
     restart: unless-stopped
     networks:
       - core-api-net
@@ -115,7 +115,7 @@ services:
       start_period: 30s
 
   transaction-service:
-    image: kimhongdocker/core-api-transaction-service
+    image: kimhongdocker/core-api-transaction-service:${VERSION_TRANSACTION_SERVICE}
     container_name: transaction-service
     labels:
       logging: promtail
@@ -179,7 +179,7 @@ services:
       start_period: 30s
 
   mb-utils:
-    image: kimhongdocker/core-api-mb-utils
+    image: kimhongdocker/core-api-mb-utils:${VERSION_MB_UTILS}
     container_name: mb-utils
     environment:
       - MB_DB_HOST=${MB_DB_HOST}
