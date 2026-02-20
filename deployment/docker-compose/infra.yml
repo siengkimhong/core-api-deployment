@@ -72,6 +72,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
   loki:
     image: grafana/loki:3.0.1
     container_name: loki
@@ -79,11 +80,7 @@ services:
       - "3100:3100"
     volumes:
       - ./loki-config.yaml:/etc/loki/loki.yaml
-      - ./loki/wal:/loki/wal
-      - ./loki/compactor:/loki/compactor
-      - ./loki/index:/loki/index
-      - ./loki/cache:/loki/cache
-      - ./loki/chunks:/loki/chunks
+      - loki_data:/loki
     command: -config.file=/etc/loki/loki.yaml
     user: "10001:10001"
     networks:
