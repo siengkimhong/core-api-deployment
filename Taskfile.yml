@@ -1,6 +1,7 @@
 version: '3'
 
 vars:
+  COMPOSE_PROJECT_NAME: '{{default "core-api" .COMPOSE_PROJECT_NAME}}'
   DC_DIR: "deployment/docker-compose"
   INFRA_DC_FILE: "{{.DC_DIR}}/infra.yml"
   APPS_DC_FILE: "{{.DC_DIR}}/apps.yml"
@@ -23,9 +24,31 @@ tasks:
 
   setup_dirs:
     cmds:
-      - sudo mkdir -p deployment/docker-compose/loki
-      - sudo chown -R 10001:10001 deployment/docker-compose/loki || true
-      - sudo chmod -R u+rwX deployment/docker-compose/loki || true
+      - |
+        set -e
+
+        echo "==> Setup Loki storage"
+
+        # If you are bind-mounting ./loki -> /loki (old method), keep folder ready
+        sudo mkdir -p deployment/docker-compose/loki || true
+        sudo chown -R 10001:10001 deployment/docker-compose/loki || true
+        sudo chmod -R u+rwX deployment/docker-compose/loki || true
+
+        # ✅ If you are using named volume loki_data:/loki (current method), fix volume perms
+        # Compose will create it as <project>_loki_data. Default project name usually equals folder name.
+        # You can override with: COMPOSE_PROJECT_NAME=core-api
+        PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}"
+        LOKI_VOL="${PROJECT}_loki_data"
+
+        echo "==> Fix Loki named-volume permissions: $LOKI_VOL"
+        docker volume inspect "$LOKI_VOL" >/dev/null 2>&1 || docker volume create "$LOKI_VOL" >/dev/null
+
+        docker run --rm -u 0:0 -v "$LOKI_VOL":/loki alpine:3.19 sh -lc '
+          mkdir -p /loki/index /loki/chunks /loki/wal /loki/compactor /loki/cache
+          chown -R 10001:10001 /loki
+          chmod -R u+rwX /loki
+        '
+
 
   start_infra:
     deps: [setup_dirs]
